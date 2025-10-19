@@ -1,6 +1,5 @@
 
 /***************************************************************************
-
  version 1.48: Updated to be compatible with Freeplane 1.12.12.
 
  version 1.47: Quick search panel: Lines connecting the results in the quick search panel to the respective nodes.
@@ -671,38 +670,49 @@ def boolean checkIfUtilityPanelsIsAlreadyRunning() {
 }
 
 public void manageInspectorsCreation() {
-    if (shouldFreeze()) return
-    if(panelsInMasterPanels.contains(currentSourcePanel)) expandMasterPanelAndUpdateInspectorsState()
-    if (activeSiblingPreviewPanels.contains(currentSourcePanel)) clearInspectorsAndPreviewInspectors()
-    if (!lastMouseLocation) return
+    if (shouldFreeze()) return;
+    if (panelsInMasterPanels.contains(currentSourcePanel)) expandMasterPanelAndUpdateInspectorsState();
 
-    int index = currentList.locationToIndex(lastMouseLocation)
-
-    if (!validateMousePositionOnList(index)) return
-
-    Object hoveredItem = currentListModel.getElementAt(index)
-
-    if(hoveredItem instanceof NodeModel) {
-        NodeModel subNode = currentListModel.getElementAt(index)
-        hoveredNode = subNode
-
-        populateAncestorsList(hoveredNode)
-
-        if (panelsInMasterPanels.contains(currentSourcePanel) || currentSourcePanel == breadcrumbPanel) cleanAndCreateInspectors(subNode, masterPanel)
-        else if (activeSiblingPreviewPanels.contains(currentSourcePanel)) updatePreviewInspectors(subNode)
-        else createSubInspector(hoveredNode, index, subNode)
+    // ---------- تغییر داده شده ----------
+    if (activeSiblingPreviewPanels.contains(currentSourcePanel)) {
+        clearInspectorsAndPreviewInspectors();
+        return; // جلوگیری از ساخت Inspector هنگام Hover روی پنل‌های Sibling Preview
     }
-    else if(currentSourcePanel == tagsPanel) updateInspectorWithTagsPanel(index)
+    // قبلی (کامنت شده):
+    // else if (activeSiblingPreviewPanels.contains(currentSourcePanel)) updatePreviewInspectors(subNode);
+    // ------------------------------------
+
+    if (!lastMouseLocation) return;
+
+    int index = currentList.locationToIndex(lastMouseLocation);
+
+    if (!validateMousePositionOnList(index)) return;
+
+    Object hoveredItem = currentListModel.getElementAt(index);
+
+    if (hoveredItem instanceof NodeModel) {
+        NodeModel subNode = currentListModel.getElementAt(index);
+        hoveredNode = subNode;
+
+        populateAncestorsList(hoveredNode);
+
+        if (panelsInMasterPanels.contains(currentSourcePanel) || currentSourcePanel == breadcrumbPanel)
+            cleanAndCreateInspectors(subNode, masterPanel);
+        else
+            createSubInspector(hoveredNode, index, subNode);
+    } 
+    else if (currentSourcePanel == tagsPanel)
+        updateInspectorWithTagsPanel(index);
 }
 
 public boolean validateMousePositionOnList(int index) {
-    Rectangle cellBounds = currentList.getCellBounds(index, index)
+    Rectangle cellBounds = currentList.getCellBounds(index, index);
 
-    if (cellBounds == null || !cellBounds.contains(lastMouseLocation)) return false
+    if (cellBounds == null || !cellBounds.contains(lastMouseLocation)) return false;
 
-    if (index < 0 || index >= currentListModel.getSize()) return false
+    if (index < 0 || index >= currentListModel.getSize()) return false;
 
-    return true
+    return true;
 }
 
 public void createSubInspector(NodeModel hoveredNode, int index, NodeModel subNode) {
