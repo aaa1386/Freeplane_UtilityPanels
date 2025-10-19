@@ -1,3 +1,4 @@
+
 /***************************************************************************
  version 1.48: Updated to be compatible with Freeplane 1.12.12.
 
@@ -390,6 +391,8 @@ showAncestorsOnFirstInspector = false
 @groovy.transform.Field hideInspectorsEvenIfUpdateSelection = true
 
 @groovy.transform.Field showInPlaceSiblingsPreview = true
+@groovy.transform.Field boolean isScrolling = false
+@groovy.transform.Field Timer scrollStopTimer = new Timer(20, null)
 
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ User settings ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -624,6 +627,11 @@ class NodeModelTransferable implements Transferable {
 */
 
 loadSettings()
+scrollStopTimer.setRepeats(false)
+scrollStopTimer.addActionListener({
+    isScrolling = false
+    refreshSiblingPreviewPanels()
+})
 createPanels()
 createSingleRunListeners()
 startListeners()
@@ -670,15 +678,16 @@ def boolean checkIfUtilityPanelsIsAlreadyRunning() {
 
 public void manageInspectorsCreation() {
     if (shouldFreeze()) return;
-    if (panelsInMasterPanels.contains(currentSourcePanel)) expandMasterPanelAndUpdateInspectorsState();
+    
+    if (panelsInMasterPanels.contains(currentSourcePanel)) {
+        expandMasterPanelAndUpdateInspectorsState();
+    }
 
     // ---------- تغییر داده شده ----------
     if (activeSiblingPreviewPanels.contains(currentSourcePanel)) {
         clearInspectorsAndPreviewInspectors();
         return; // جلوگیری از ساخت Inspector هنگام Hover روی پنل‌های Sibling Preview
     }
-    // قبلی (کامنت شده):
-    // else if (activeSiblingPreviewPanels.contains(currentSourcePanel)) updatePreviewInspectors(subNode);
     // ------------------------------------
 
     if (!lastMouseLocation) return;
@@ -695,13 +704,20 @@ public void manageInspectorsCreation() {
 
         populateAncestorsList(hoveredNode);
 
-        if (panelsInMasterPanels.contains(currentSourcePanel) || currentSourcePanel == breadcrumbPanel)
+        if (panelsInMasterPanels.contains(currentSourcePanel) || currentSourcePanel == breadcrumbPanel) {
             cleanAndCreateInspectors(subNode, masterPanel);
-        else
+        } else {
             createSubInspector(hoveredNode, index, subNode);
+        }
     } 
-    else if (currentSourcePanel == tagsPanel)
+    else if (currentSourcePanel == tagsPanel) {
         updateInspectorWithTagsPanel(index);
+    }
+    
+    // ★★★★ این خط جدید را اضافه کنید:
+    if (currentList != null) {
+        currentList.repaint(); // فورس رندر برای نمایش حاشیه بنفش
+    }
 }
 
 public boolean validateMousePositionOnList(int index) {
@@ -2615,6 +2631,20 @@ void configureLabelForNode(JComponent component, NodeModel nodeNotProxy, JPanel 
         }
 
         NodeModel storedNode = (NodeModel) sourcePanel.getClientProperty("referenceNode")
+            boolean isHovered = false
+        if (hoveredNode == nodeNotProxy && mouseOverList) {
+        isHovered = true
+        
+        }
+            if (isHovered) {
+        label.setBorder(BorderFactory.createLineBorder(new Color(160, 32, 240), 3)) // بنفش
+    }
+    else if (currentlySelectedNode == nodeNotProxy) {
+        label.setBorder(BorderFactory.createLineBorder(Color.RED, 4))
+    }
+    else if(!panelsInMasterPanels.contains(sourcePanel) && sourcePanel != breadcrumbPanel) {
+        // کدهای موجود...
+    }
 
 //        if(currentMapView.getNodeView(nodeNotProxy) == null || !isNodeOnScreen(nodeNotProxy)) {
 //            label.setBorder(BorderFactory.createLineBorder(Color.BLUE, 4))
@@ -3198,6 +3228,8 @@ void configureMouseExitListener(JList<NodeModel> list) {
         @Override
         void mouseExited(MouseEvent e) {
             mouseOverList = false
+            hoveredNode = null // ★ پاک کردن هایلایت هاور
+            list.repaint() // ★ فورس رندر برای حذف حاشیه بنفش
             hideInspectorTimer.restart()
         }
     })
@@ -4394,10 +4426,8 @@ def createComponentChangeListener() {
     mapView1 = Controller.currentController.MapViewManager.mapView
     if (mapView1.componentListeners.any { it.getClass().getName().startsWith("UtilityPanels") }) return
 
-
     mapView1.addComponentListener(new ComponentAdapter() {
         public void componentMoved(ComponentEvent e) {
-
             ensureOverlayExistsAndRepaint()
 
             if(!showPanels) {
@@ -4409,18 +4439,35 @@ def createComponentChangeListener() {
             nv3 = mapView1.getNodeView(currentlySelectedNode)
             if (Boolean.TRUE.equals(nv3.getMainView().getClientProperty(INLINE_EDITOR_ACTIVE))) {
                 return
-
             }
 
-            if (showInPlaceSiblingsPreview) refreshSiblingPreviewPanels()
-            else if (activeSiblingPreviewPanels.size() != 0) {
-                activeSiblingPreviewPanels.each {
-                    it.setVisible(false)
+            // مدیریت پنل‌های siblings هنگام حرکت
+            if (showInPlaceSiblingsPreview) {
+                if (!isScrolling) {
+                    isScrolling = true
+                    hideSiblingPreviewPanels() // مخفی کردن پنل‌ها هنگام شروع اسکرول
                 }
-                activeSiblingPreviewPanels.clear()
+                scrollStopTimer.restart()
             }
         }
     })
+    
+    // اضافه کردن لیسنر اسکرول به viewport
+    def viewport = mapView1.getParent()
+    if (viewport instanceof JViewport) {
+        viewport.addChangeListener(new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent e) {
+                if (showInPlaceSiblingsPreview) {
+                    if (!isScrolling) {
+                        isScrolling = true
+                        hideSiblingPreviewPanels() // مخفی کردن پنل‌ها هنگام شروع اسکرول
+                    }
+                    scrollStopTimer.restart()
+                }
+            }
+        })
+    }
 }
 
 
@@ -4844,7 +4891,6 @@ def static getUserDefinedStylesParentNode(x = null){
     return getUserDefinedStylesParentNode((ScriptContext) null)
 }
 
-
 def static getUserDefinedStylesParentNode(ScriptContext scriptContext){
     MapModel mapa = Controller.getCurrentController().getMap();
     return getUserDefinedStylesParentNode(mapa, scriptContext)
@@ -4865,8 +4911,16 @@ def static getUserDefinedStylesParentNode(MapModel mapa, ScriptContext scriptCon
     return userDefinedParentNode
 }
 
+def hideSiblingPreviewPanels() {
+    activeSiblingPreviewPanels.each {
+        it.setVisible(false)
+    }
+}
 
 def refreshSiblingPreviewPanels() {
+    if (isScrolling) {
+        return
+    }
 
     activeSiblingPreviewPanels.each {
         it.visible = false
@@ -4874,95 +4928,127 @@ def refreshSiblingPreviewPanels() {
     }
     activeSiblingPreviewPanels.clear()
 
+    if (!showInPlaceSiblingsPreview) return
+
     def mapView = Controller.currentController.MapViewManager.mapView
     def viewport = mapView.getParent()
     if (!(viewport instanceof JViewport)) {
         return
     }
 
-    c.viewRoot.findAll().each {
+    c.viewRoot.findAll().each { nodeProxy ->
+        if (nodeProxy == c.viewRoot) return
 
-        if (it == c.viewRoot) return
+        def testedNode = nodeProxy.delegate
+        if (testedNode == null) return
 
-        def testedNode = it
-        if (testedNode == null) {
-            return
-        }
-
-        NodeView testedNodeView = mapView.getNodeView(testedNode.delegate)
-        if (testedNodeView == null) {
-            return
-        }
+        NodeView testedNodeView = mapView.getNodeView(testedNode)
+        if (testedNodeView == null) return
+        
         Point selectedPointOnMap = mapView.getNodeContentLocation(testedNodeView)
         Point selectedPointOnScreen = SwingUtilities.convertPoint(mapView, selectedPointOnMap, viewport)
         referenceNodeScreenX = selectedPointOnScreen.x
         referenceNodeScreenY = selectedPointOnScreen.y
 
-
-//        if(referenceNodeScreenX < 0 || referenceNodeScreenX > viewport.getViewRect().width) return
-
-        if(testedNode.parent.children.size() == 1) return
-
+        if (testedNode.parent?.children?.size() == 1) return
 
         def parentNode = testedNode.parent
         def siblings = parentNode.children
         int selectedIndex = siblings.indexOf(testedNode)
-        if (selectedIndex < 0) {
-            return
-        }
+        if (selectedIndex < 0) return
 
         NodeModel offScreenSiblingAbove = null
-
-
-        if(selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1].delegate)) offScreenSiblingAbove = siblings[selectedIndex - 1].delegate
+        if (selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1])) {
+            offScreenSiblingAbove = siblings[selectedIndex - 1]
+        }
 
         if (offScreenSiblingAbove != null) {
-
             NodeView offScreenSiblingAboveNodeView = mapView.getNodeView(offScreenSiblingAbove)
             Point offScreenSiblingAboveSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingAboveNodeView)
             Point offScreenSiblingAboveSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingAboveSelectedPointOnMap, viewport)
-            offScreenSiblingAboveXPoint = offScreenSiblingAboveSelectedPointOnScreen.x
-            offScreenSiblingAboveYPoint = offScreenSiblingAboveSelectedPointOnScreen.y
-
-
-            if (referenceNodeScreenY >= 0 && offScreenSiblingAboveYPoint <= 0 && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
-
-                siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, false, referenceNodeScreenX as int, referenceNodeScreenY as int)
-
-                activeSiblingPreviewPanels << siblingsPreviewPanelCreated
-
+            
+            if (selectedPointOnScreen.y >= 0 && offScreenSiblingAboveSelectedPointOnScreen.y <= 0 && 
+                selectedPointOnScreen.x > 0 && selectedPointOnScreen.x < viewport.getWidth()) {
+                
+                def siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode, false, selectedPointOnScreen.x as int, selectedPointOnScreen.y as int)
+                if (siblingsPreviewPanelCreated) {
+                    activeSiblingPreviewPanels.add(siblingsPreviewPanelCreated)
+                }
             }
-
-
-        } else {
         }
 
-
         NodeModel offScreenSiblingBelow = null
-
-        if(selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1].delegate)) offScreenSiblingBelow = siblings[selectedIndex + 1].delegate
-
+        if (selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1])) {
+            offScreenSiblingBelow = siblings[selectedIndex + 1]
+        }
 
         if (offScreenSiblingBelow != null) {
-
             NodeView offScreenSiblingBelowNodeView = mapView.getNodeView(offScreenSiblingBelow)
             Point offScreenSiblingBelowSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingBelowNodeView)
             Point offScreenSiblingBelowSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingBelowSelectedPointOnMap, viewport)
-            offScreenSiblingBelowXPoint = offScreenSiblingBelowSelectedPointOnScreen.x
-            offScreenSiblingBelowYPoint = offScreenSiblingBelowSelectedPointOnScreen.y
-
-
-            if (referenceNodeScreenY < viewport.getHeight() && offScreenSiblingBelowYPoint >= viewport.getHeight() && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
-
-                siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, true, referenceNodeScreenX as int, referenceNodeScreenY as int)
-
-                activeSiblingPreviewPanels << siblingsPreviewPanelCreated
-
+            
+            if (selectedPointOnScreen.y < viewport.getHeight() && 
+                offScreenSiblingBelowSelectedPointOnScreen.y >= viewport.getHeight() && 
+                selectedPointOnScreen.x > 0 && selectedPointOnScreen.x < viewport.getWidth()) {
+                
+                def siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode, true, selectedPointOnScreen.x as int, selectedPointOnScreen.y as int)
+                if (siblingsPreviewPanelCreated) {
+                    activeSiblingPreviewPanels.add(siblingsPreviewPanelCreated)
+                }
             }
-
-
-        } else {
         }
+    }
+    
+    mapView.repaint()
+} 
+
+
+//        if(referenceNodeScreenX < 0 || referenceNodeScreenX > viewport.getViewRect().width) return
+
+if(testedNode.parent.children.size() == 1) return
+
+def parentNode = testedNode.parent
+def siblings = parentNode.children
+int selectedIndex = siblings.indexOf(testedNode)
+if (selectedIndex < 0) {
+    return
+}
+
+NodeModel offScreenSiblingAbove = null
+
+if(selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1].delegate)) {
+    offScreenSiblingAbove = siblings[selectedIndex - 1].delegate
+}
+
+if (offScreenSiblingAbove != null) {
+    NodeView offScreenSiblingAboveNodeView = mapView.getNodeView(offScreenSiblingAbove)
+    Point offScreenSiblingAboveSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingAboveNodeView)
+    Point offScreenSiblingAboveSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingAboveSelectedPointOnMap, viewport)
+    offScreenSiblingAboveXPoint = offScreenSiblingAboveSelectedPointOnScreen.x
+    offScreenSiblingAboveYPoint = offScreenSiblingAboveSelectedPointOnScreen.y
+
+    if (referenceNodeScreenY >= 0 && offScreenSiblingAboveYPoint <= 0 && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
+        siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, false, referenceNodeScreenX as int, referenceNodeScreenY as int)
+        activeSiblingPreviewPanels << siblingsPreviewPanelCreated
+    }
+}
+
+NodeModel offScreenSiblingBelow = null
+
+if(selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1].delegate)) {
+    offScreenSiblingBelow = siblings[selectedIndex + 1].delegate
+}
+
+if (offScreenSiblingBelow != null) {
+    NodeView offScreenSiblingBelowNodeView = mapView.getNodeView(offScreenSiblingBelow)
+    Point offScreenSiblingBelowSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingBelowNodeView)
+    Point offScreenSiblingBelowSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingBelowSelectedPointOnMap, viewport)
+    offScreenSiblingBelowXPoint = offScreenSiblingBelowSelectedPointOnScreen.x
+    offScreenSiblingBelowYPoint = offScreenSiblingBelowSelectedPointOnScreen.y
+
+    if (referenceNodeScreenY < viewport.getHeight() && offScreenSiblingBelowYPoint >= viewport.getHeight() && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
+        siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, true, referenceNodeScreenX as int, referenceNodeScreenY as int)
+        activeSiblingPreviewPanels << siblingsPreviewPanelCreated
     }
 }
 
