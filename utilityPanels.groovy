@@ -394,7 +394,7 @@ showAncestorsOnFirstInspector = false
 
 @groovy.transform.Field showInspectorsOnSiblingsPreviewHover = true
 
-@groovy.transform.Field Timer scrollStopTimer = new Timer(80, null)
+@groovy.transform.Field Timer scrollStopTimer = new Timer(1, null)
 
 @groovy.transform.Field boolean isScrolling = false
 
