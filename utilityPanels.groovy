@@ -394,6 +394,10 @@ showAncestorsOnFirstInspector = false
 
 @groovy.transform.Field showInspectorsOnSiblingsPreviewHover = true
 
+@groovy.transform.Field Timer scrollStopTimer = new Timer(80, null)
+
+@groovy.transform.Field boolean isScrolling = false
+
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ User settings ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 
@@ -603,8 +607,6 @@ class NodeModelTransferable implements Transferable {
 }
 
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ Variables ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-
-
 
 
 
@@ -4439,7 +4441,10 @@ def createComponentChangeListener() {
 
             }
 
-            if (showInPlaceSiblingsPreview) refreshSiblingPreviewPanels()
+            
+            if (showInPlaceSiblingsPreview) {
+                 updatePanelPositions()
+            }
             else if (activeSiblingPreviewPanels.size() != 0) {
                 activeSiblingPreviewPanels.each {
                     it.setVisible(false)
@@ -4894,105 +4899,101 @@ def static getUserDefinedStylesParentNode(MapModel mapa, ScriptContext scriptCon
 
 
 def refreshSiblingPreviewPanels() {
-
-    activeSiblingPreviewPanels.each {
-        it.visible = false
-        parentPanel.remove(it)
-    }
-    activeSiblingPreviewPanels.clear()
+    if (!showInPlaceSiblingsPreview) return
 
     def mapView = Controller.currentController.MapViewManager.mapView
     def viewport = mapView.getParent()
-    if (!(viewport instanceof JViewport)) {
-        return
+    if (!(viewport instanceof JViewport)) return
+
+    def c = ScriptUtils.c()
+    def panelsToKeep = [] // پنل‌هایی که هنوز نیاز هستن
+    def nodesProcessed = [] // نودهایی که پردازش شدند
+    
+    // مرحله ۱: بررسی پنل‌های موجود
+    activeSiblingPreviewPanels.each { panel ->
+        def nodeData = panel.getClientProperty("nodeData")
+        if (nodeData != null) {
+            def nodeNotProxy = nodeData.node
+            def positionAtBottom = nodeData.positionAtBottom
+            
+            // بررسی کن آیا این پنل هنوز لازمه
+            if (shouldKeepSiblingPanel(nodeNotProxy, positionAtBottom)) {
+                panelsToKeep << panel
+                nodesProcessed << nodeNotProxy
+            } else {
+                // پنل دیگه لازم نیست
+                panel.setVisible(false)
+                panel.getParent()?.remove(panel)
+            }
+        }
     }
+    
+    // مرحله ۲: پنل‌های جدید برای نودهای لازم ایجاد کن
+    c.viewRoot.findAll().each { nodeProxy ->
+        if (nodeProxy == c.viewRoot) return
 
-    c.viewRoot.findAll().each {
+        def testedNode = nodeProxy.delegate
+        if (testedNode == null || nodesProcessed.contains(testedNode)) return
 
-        if (it == c.viewRoot) return
-
-        def testedNode = it
-        if (testedNode == null) {
-            return
-        }
-
-        NodeView testedNodeView = mapView.getNodeView(testedNode.delegate)
-        if (testedNodeView == null) {
-            return
-        }
+        NodeView testedNodeView = mapView.getNodeView(testedNode)
+        if (testedNodeView == null) return
+        
         Point selectedPointOnMap = mapView.getNodeContentLocation(testedNodeView)
         Point selectedPointOnScreen = SwingUtilities.convertPoint(mapView, selectedPointOnMap, viewport)
-        referenceNodeScreenX = selectedPointOnScreen.x
-        referenceNodeScreenY = selectedPointOnScreen.y
 
-
-//        if(referenceNodeScreenX < 0 || referenceNodeScreenX > viewport.getViewRect().width) return
-
-        if(testedNode.parent.children.size() == 1) return
-
+        if (testedNode.parent?.children?.size() == 1) return
 
         def parentNode = testedNode.parent
         def siblings = parentNode.children
         int selectedIndex = siblings.indexOf(testedNode)
-        if (selectedIndex < 0) {
-            return
-        }
+        if (selectedIndex < 0) return
 
-        NodeModel offScreenSiblingAbove = null
-
-
-        if(selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1].delegate)) offScreenSiblingAbove = siblings[selectedIndex - 1].delegate
-
-        if (offScreenSiblingAbove != null) {
-
+        // بررسی برای پنل بالا
+        if (selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1])) {
+            NodeModel offScreenSiblingAbove = siblings[selectedIndex - 1]
             NodeView offScreenSiblingAboveNodeView = mapView.getNodeView(offScreenSiblingAbove)
             Point offScreenSiblingAboveSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingAboveNodeView)
             Point offScreenSiblingAboveSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingAboveSelectedPointOnMap, viewport)
-            offScreenSiblingAboveXPoint = offScreenSiblingAboveSelectedPointOnScreen.x
-            offScreenSiblingAboveYPoint = offScreenSiblingAboveSelectedPointOnScreen.y
-
-
-            if (referenceNodeScreenY >= 0 && offScreenSiblingAboveYPoint <= 0 && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
-
-                siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, false, referenceNodeScreenX as int, referenceNodeScreenY as int)
-
-                activeSiblingPreviewPanels << siblingsPreviewPanelCreated
-
+            
+            if (selectedPointOnScreen.y >= 0 && offScreenSiblingAboveSelectedPointOnScreen.y <= 0 && 
+                selectedPointOnScreen.x > 0 && selectedPointOnScreen.x < viewport.getWidth()) {
+                
+                def siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode, false, selectedPointOnScreen.x as int, selectedPointOnScreen.y as int)
+                if (siblingsPreviewPanelCreated) {
+                    def nodeData = [node: testedNode, positionAtBottom: false]
+                    siblingsPreviewPanelCreated.putClientProperty("nodeData", nodeData)
+                    panelsToKeep << siblingsPreviewPanelCreated
+                }
             }
-
-
-        } else {
         }
 
-
-        NodeModel offScreenSiblingBelow = null
-
-        if(selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1].delegate)) offScreenSiblingBelow = siblings[selectedIndex + 1].delegate
-
-
-        if (offScreenSiblingBelow != null) {
-
+        // بررسی برای پنل پایین
+        if (selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1])) {
+            NodeModel offScreenSiblingBelow = siblings[selectedIndex + 1]
             NodeView offScreenSiblingBelowNodeView = mapView.getNodeView(offScreenSiblingBelow)
             Point offScreenSiblingBelowSelectedPointOnMap = mapView.getNodeContentLocation(offScreenSiblingBelowNodeView)
             Point offScreenSiblingBelowSelectedPointOnScreen = SwingUtilities.convertPoint(mapView, offScreenSiblingBelowSelectedPointOnMap, viewport)
-            offScreenSiblingBelowXPoint = offScreenSiblingBelowSelectedPointOnScreen.x
-            offScreenSiblingBelowYPoint = offScreenSiblingBelowSelectedPointOnScreen.y
-
-
-            if (referenceNodeScreenY < viewport.getHeight() && offScreenSiblingBelowYPoint >= viewport.getHeight() && referenceNodeScreenX > 0 && referenceNodeScreenX < viewport.getWidth()) {
-
-                siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode.delegate, true, referenceNodeScreenX as int, referenceNodeScreenY as int)
-
-                activeSiblingPreviewPanels << siblingsPreviewPanelCreated
-
+            
+            if (selectedPointOnScreen.y < viewport.getHeight() && 
+                offScreenSiblingBelowSelectedPointOnScreen.y >= viewport.getHeight() && 
+                selectedPointOnScreen.x > 0 && selectedPointOnScreen.x < viewport.getWidth()) {
+                
+                def siblingsPreviewPanelCreated = createSiblingPreviewPanel(testedNode, true, selectedPointOnScreen.x as int, selectedPointOnScreen.y as int)
+                if (siblingsPreviewPanelCreated) {
+                    def nodeData = [node: testedNode, positionAtBottom: true]
+                    siblingsPreviewPanelCreated.putClientProperty("nodeData", nodeData)
+                    panelsToKeep << siblingsPreviewPanelCreated
+                }
             }
-
-
-        } else {
         }
     }
+    
+    // آپدیت لیست پنل‌های فعال
+    activeSiblingPreviewPanels.clear()
+    activeSiblingPreviewPanels.addAll(panelsToKeep)
+    
+    mapView.repaint()
 }
-
 public void createSingleRunListeners() {
     String searchText
     IMapViewChangeListener myMapViewChangeListener = new IMapViewChangeListener() {
@@ -5044,6 +5045,10 @@ public void createSingleRunListeners() {
 def startListeners() {
 
     createComponentChangeListener()
+
+     if (showInPlaceSiblingsPreview) {
+        initializeSiblingsPreview()
+    }
 
     INodeSelectionListener mySelectionListener = new INodeSelectionListener() {
         @Override
@@ -5172,7 +5177,7 @@ def startListeners() {
 //        inPlaceInspector.setBounds((int) x, 500, 300, 300)
 //        inPlaceInspector.setVisible(true)
 
-            ////////////////////////
+            /تاندا///////////////////////
 
         }
 
@@ -5427,3 +5432,110 @@ def refreshHighlighterCache() {
 def refreshHighlighterCacheTags() {
     cachedHighlightedNodesTags.clear()
 }
+
+// ★★★★ توابع جدید برای مدیریت پویای موقعیت پنل‌ها ★★★★
+def initializeSiblingsPreview() {
+    scrollStopTimer.setRepeats(false)
+    scrollStopTimer.addActionListener({
+        isScrolling = false
+        refreshSiblingPreviewPanels() // بازسازی کامل پنل‌ها پس از توقف اسکرول
+    })
+    
+    addScrollAndMoveListeners()
+}
+
+def addScrollAndMoveListeners() {
+    def mapView = Controller.currentController.MapViewManager.mapView
+    
+    // لیسنر حرکت
+    mapView.addComponentListener(new ComponentAdapter() {
+        public void componentMoved(ComponentEvent e) {
+            if (showInPlaceSiblingsPreview) {
+                updatePanelPositions() // به‌روزرسانی موقعیت پنل‌های موجود
+            }
+        }
+    })
+    
+    // لیسنر اسکرول
+    def viewport = mapView.getParent()
+    if (viewport instanceof JViewport) {
+        viewport.addChangeListener(new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent e) {
+                if (showInPlaceSiblingsPreview) {
+                    if (!isScrolling) {
+                        isScrolling = true
+                    }
+                    updatePanelPositions() // به‌روزرسانی موقعیت در حین اسکرول
+                    scrollStopTimer.restart()
+                }
+            }
+        })
+    }
+}
+
+// تابع جدید: به‌روزرسانی موقعیت پنل‌ها بدون مخفی کردن
+def updatePanelPositions() {
+    if (!showInPlaceSiblingsPreview || activeSiblingPreviewPanels.isEmpty()) return
+    
+    def mapView = Controller.currentController.MapViewManager.mapView
+    def viewport = mapView.getParent()
+    if (!(viewport instanceof JViewport)) return
+
+    activeSiblingPreviewPanels.each { panel ->
+        def nodeData = panel.getClientProperty("nodeData")
+        if (nodeData != null) {
+            def nodeNotProxy = nodeData.node
+            def positionAtBottom = nodeData.positionAtBottom
+            
+            NodeView nodeView = mapView.getNodeView(nodeNotProxy)
+            if (nodeView != null) {
+                Point nodePoint = mapView.getNodeContentLocation(nodeView)
+                Point nodeScreen = SwingUtilities.convertPoint(mapView, nodePoint, viewport)
+                
+                int referenceNodeScreenX = nodeScreen.x
+                int referenceNodeScreenY = nodeScreen.y
+                
+                if (!positionAtBottom) {
+                    panel.setLocation(referenceNodeScreenX, referenceNodeScreenY - panel.getHeight())
+                } else {
+                    panel.setLocation(referenceNodeScreenX, referenceNodeScreenY + nodeView.getContentPane().height)
+                }
+            }
+        }
+    }
+    
+    mapView.repaint()
+}
+// تابع کمکی: بررسی کن آیا پنل باید نگه داشته بشه
+def shouldKeepSiblingPanel(NodeModel nodeNotProxy, boolean positionAtBottom) {
+    def mapView = Controller.currentController.MapViewManager.mapView
+    def viewport = mapView.getParent()
+    if (!(viewport instanceof JViewport)) return false
+
+    NodeView nodeView = mapView.getNodeView(nodeNotProxy)
+    if (nodeView == null) return false
+
+    Point nodePoint = mapView.getNodeContentLocation(nodeView)
+    Point nodeScreen = SwingUtilities.convertPoint(mapView, nodePoint, viewport)
+    
+    def parentNode = nodeNotProxy.parent
+    def siblings = parentNode.children
+    int selectedIndex = siblings.indexOf(nodeNotProxy)
+    if (selectedIndex < 0) return false
+
+    if (!positionAtBottom) {
+        // پنل بالا - بررسی کن آیا هنوز siblingهای بالایی خارج از viewport هستن
+        if (selectedIndex > 0 && !isNodeVisibleInViewport(siblings[selectedIndex - 1])) {
+            return nodeScreen.y >= 0 && nodeScreen.x > 0 && nodeScreen.x < viewport.getWidth()
+        }
+    } else {
+        // پنل پایین - بررسی کن آیا هنوز siblingهای پایینی خارج از viewport هستن
+        if (selectedIndex + 1 < siblings.size() && !isNodeVisibleInViewport(siblings[selectedIndex + 1])) {
+            return nodeScreen.y < viewport.getHeight() && nodeScreen.x > 0 && nodeScreen.x < viewport.getWidth()
+        }
+    }
+    
+    return false
+}
+return
