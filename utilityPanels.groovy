@@ -396,6 +396,8 @@ showAncestorsOnFirstInspector = false
 
 @groovy.transform.Field showInspectorsOnSiblingsPreviewHover = true
 
+@groovy.transform.Field boolean fastScrollToCenter = true
+
 //↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑ User settings ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 
@@ -2944,11 +2946,50 @@ void configureListSelection(JList<NodeModel> list) {
                 flagFreezeInspectorsWasOn = freezeInspectors
                 if(!flagFreezeInspectorsWasOn) freezeInspectors = true
                 currentlySelectedNode = selectedItemNode
+                
+                // ★★★ ابتدا همه پنل‌های بازرس را پاک کن ★★★
+                hideAllInspectorPanels()
+                
+                // سپس گره را انتخاب کن
                 Controller.currentController.mapViewManager.mapView.getMapSelection().selectAsTheOnlyOneSelected(selectedItemNode)
+                
+                // ★★★ در نهایت اسکرول کن ★★★
+                if (fastScrollToCenter) {
+                    Controller.currentController.mapViewManager.mapView.getMapSelection().scrollNodeToCenter(selectedItemNode, false)
+                }
+                
                 freezeInspectors = flagFreezeInspectorsWasOn
             }
         }
     } as ListSelectionListener)
+}
+
+// ★★★ قدم ۲: اضافه کردن این متد جدید ★★★
+def hideAllInspectorPanels() {
+    // پاک کردن پنل‌های بازرس پیش‌نمایش
+    visiblePreviewInspectors.each {
+        it.setVisible(false)
+        parentPanel.remove(it)
+    }
+    visiblePreviewInspectors.clear()
+    
+    // پاک کردن پنل‌های بازرس معمولی (اگر freeze فعال نباشد)
+    if (!freezeInspectors) {
+        visibleInspectors.each {
+            if (it != visibleInspectors[0] && it != visibleInspectors[1]) {
+                it.setVisible(false)
+                parentPanel.remove(it)
+            }
+        }
+        visibleInspectors.removeAll { it != visibleInspectors[0] && it != visibleInspectors[1] }
+    }
+    
+    // ریتکت کردن پنل اصلی
+    retractMasterPanel()
+    
+    // به‌روزرسانی رابط
+    parentPanel.revalidate()
+    parentPanel.repaint()
 }
 
 void configureListContextMenu(JList<NodeModel> list) {
@@ -3605,7 +3646,8 @@ def saveSettings() {
                     keyStrokeToShowPanels: keyStrokeToShowPanels.toString(),
                     hideInspectorsEvenIfUpdateSelection: hideInspectorsEvenIfUpdateSelection,
                     showInPlaceSiblingsPreview: showInPlaceSiblingsPreview,
-                    showInspectorsOnSiblingsPreviewHover: showInspectorsOnSiblingsPreviewHover
+                    showInspectorsOnSiblingsPreviewHover: showInspectorsOnSiblingsPreviewHover,
+                    fastScrollToCenter: fastScrollToCenter
             ]
     ]).toPrettyString()
 
@@ -3685,6 +3727,7 @@ private void loadSettings() {
             hideInspectorsEvenIfUpdateSelection = settings.userSettings.hideInspectorsEvenIfUpdateSelection ?: hideInspectorsEvenIfUpdateSelection
             showInPlaceSiblingsPreview = settings.userSettings.showInPlaceSiblingsPreview ?: showInPlaceSiblingsPreview
             showInspectorsOnSiblingsPreviewHover = settings.userSettings.showInspectorsOnSiblingsPreviewHover ?: showInspectorsOnSiblingsPreviewHover
+            fastScrollToCenter = settings.userSettings.fastScrollToCenter != null ? settings.userSettings.fastScrollToCenter : true
         }
 
     } catch (Exception e) {
@@ -4375,6 +4418,12 @@ def showSettingsDialog() {
     JCheckBox hideInspectorsCheck = new JCheckBox("", hideInspectorsEvenIfUpdateSelection)
     settingsPanel.add(hideInspectorsCheck)
 
+    // ★★★ قدم ۵: اضافه کردن این بخش ★★★
+    settingsPanel.add(new JLabel("Fast Scroll to Center:"))
+    JCheckBox fastScrollCheck = new JCheckBox("", fastScrollToCenter)
+    fastScrollCheck.setToolTipText("When enabled, nodes will scroll to center quickly when clicked in panels")
+    settingsPanel.add(fastScrollCheck)
+
     settingsDialog.add(new JScrollPane(settingsPanel), BorderLayout.CENTER)
 
     JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT))
@@ -4404,6 +4453,7 @@ def showSettingsDialog() {
             keyStrokeToShowPanels = KeyStroke.getKeyStroke(showPanelsHotkeyField.getText())
         } catch(Exception ex) {}
         hideInspectorsEvenIfUpdateSelection = hideInspectorsCheck.isSelected()
+        fastScrollToCenter = fastScrollCheck.isSelected()
 
         saveSettings()
         reloadPanels()
