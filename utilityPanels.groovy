@@ -386,7 +386,7 @@ widthOfTheClearButtonOnQuickSearchPanel = 30
 
 showAncestorsOnFirstInspector = false
 
-@groovy.transform.Field rtlOrientation = false
+@groovy.transform.Field rtlOrientation = true
 
 @groovy.transform.Field KeyStroke keyStrokeToShowPanels = KeyStroke.getKeyStroke(KeyEvent.VK_U, KeyEvent.CTRL_DOWN_MASK)
 
@@ -906,20 +906,26 @@ public void createSubInspector(NodeModel hoveredNode, int index, NodeModel subNo
 public void updateSubInspectorsLocation(JPanel subInspectorPanel) {
     if (visiblePreviewInspectors.contains(currentSourcePanel)) {
         visiblePreviewInspectors.add(subInspectorPanel)
-        locationOfTheInspectorOfTheCurrentPanelUnderMouse = subInspectorPanel.getLocation().x
-        visiblePreviewInspectors.clone().each {
-            if (it != subInspectorPanel && it.getLocation().x >= locationOfTheInspectorOfTheCurrentPanelUnderMouse) {
-                it.setVisible(false)
-                visiblePreviewInspectors.remove(it)
+        
+        // فقط پنل‌هایی که بعد از پنل منبع هستند رو پنهان کن
+        int sourceIndex = visiblePreviewInspectors.indexOf(currentSourcePanel)
+        for (int i = visiblePreviewInspectors.size() - 1; i > sourceIndex; i--) {
+            JPanel panel = visiblePreviewInspectors.get(i)
+            if (panel != subInspectorPanel) {
+                panel.setVisible(false)
+                visiblePreviewInspectors.remove(i)
             }
         }
     } else {
         visibleInspectors.add(subInspectorPanel)
-        locationOfTheInspectorOfTheCurrentPanelUnderMouse = subInspectorPanel.getLocation().x
-        visibleInspectors.clone().each {
-            if (it != subInspectorPanel && it.getLocation().x >= locationOfTheInspectorOfTheCurrentPanelUnderMouse) {
-                it.setVisible(false)
-                visibleInspectors.remove(it)
+        
+        // فقط پنل‌هایی که بعد از پنل منبع هستند رو پنهان کن  
+        int sourceIndex = visibleInspectors.indexOf(currentSourcePanel)
+        for (int i = visibleInspectors.size() - 1; i > sourceIndex; i--) {
+            JPanel panel = visibleInspectors.get(i)
+            if (panel != subInspectorPanel) {
+                panel.setVisible(false)
+                visibleInspectors.remove(i)
             }
         }
     }
@@ -1150,7 +1156,10 @@ public void basicMasterPanelConfigs(JPanel masterPanel, JPanel breadcrumbPanel) 
         masterPanel.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT)
     }
     masterPanel.addMouseListener(sharedMouseListener)
-    masterPanel.setBounds(0, breadcrumbPanel.height, calculateRetractedWidthForMasterPanel(), (int) mapViewWindowForSizeReferences.height - 5)
+    
+    // تغییر این خط - پنل اصلی در سمت راست
+    int xPosition = rtlOrientation ? parentPanel.width - calculateRetractedWidthForMasterPanel() : 0
+    masterPanel.setBounds(xPosition, breadcrumbPanel.height, calculateRetractedWidthForMasterPanel(), (int) mapViewWindowForSizeReferences.height - 5)
 }
 
 public JPanel createStylesPanel() {
@@ -1279,15 +1288,16 @@ public JPanel createAndAttachBreadcrumbsPanels() {
             super.paintComponent(g)
         }
     }
-    breadcrumbPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 8, 5))
-//    breadcrumbPanel.setLayout(new FlowLayout(rtlOrientation ? FlowLayout.RIGHT : FlowLayout.LEFT, 8, 5))
+    
+    // تغییر این خط - از LEFT به RIGHT برای راست‌چین
+    breadcrumbPanel.setLayout(new FlowLayout(rtlOrientation ? FlowLayout.RIGHT : FlowLayout.LEFT, 8, 5))
+    
     breadcrumbPanel.setBackground(new Color(0, 0, 0, 0))
-//    breadcrumbPanel.setBackground(new Color(220, 220, 220))
     breadcrumbPanel.setOpaque(false)
 
     breadcrumbPanel.setBounds(0, 0, parentPanel.width, 40)
 
-
+    // تغییر جهت کامپوننت
     if (rtlOrientation) {
         breadcrumbPanel.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT)
     } else {
@@ -1305,14 +1315,7 @@ public JPanel createAndAttachBreadcrumbsPanels() {
         }
     }
 
-//    20.times {
-//        ancestorsOfCurrentNode.addElement(currentlySelectedNode)
-//    }
-
     createBreadcrumbsJList()
-
-//    listeners2 = ancestorsOfCurrentNode.getListDataListeners()
-//    listeners2.each { ancestorsOfCurrentNode.removeListDataListener(it) }
 
     parentPanel.add(breadcrumbPanel)
     parentPanel.setComponentZOrder(breadcrumbPanel, 0)
@@ -3755,7 +3758,7 @@ def int calculateInspectorWidth(int ammountOfPannelsInInspector) {
 }
 
 def setInspectorLocation(JPanel inspectorPanel, JPanel sourcePanel) {
-    int x = sourcePanel.getLocation().x + sourcePanel.width
+    int x = rtlOrientation ? sourcePanel.getLocation().x - inspectorPanel.width : sourcePanel.getLocation().x + sourcePanel.width
 
     int y = sourcePanel.getLocation().y
     if(panelsInMasterPanels.contains(sourcePanel)) {
@@ -3786,7 +3789,6 @@ def setInspectorLocation(JPanel inspectorPanel, JPanel sourcePanel) {
 
     inspectorPanel.setLocation(x, y)
 }
-
 
 def containsTermInAncestors(NodeModel node, String term) {
     node = node.parent
@@ -4104,17 +4106,6 @@ def JList createJList(DefaultListModel<NodeModel> nodes, JPanel jListPanel, JPan
 }
 
 def createBreadcrumbsJList() {
-//    breadcrumbPanel.removeAll()
-//    if (!ancestorsOfCurrentNode || ancestorsOfCurrentNode.isEmpty()) {
-//        breadcrumbPanel.revalidate()
-//        breadcrumbPanel.repaint()
-//        return
-//    }
-
-//    DefaultListModel<NodeModel> listModel = new DefaultListModel<>()
-//    ancestorsOfCurrentNode.each { listModel.addElement(it) }
-
-//    JList<NodeModel> jList = new JList<>(ancestorsOfCurrentNode)
     ancestorsJList.setModel(ancestorsOfCurrentNode)
     ancestorsJList.setLayoutOrientation(JList.HORIZONTAL_WRAP)
     ancestorsJList.setVisibleRowCount(1)
@@ -4124,21 +4115,18 @@ def createBreadcrumbsJList() {
 
     commonJListsConfigs(ancestorsJList, ancestorsOfCurrentNode, breadcrumbPanel)
 
+    // تغییر جهت برای راست‌چین
     if (rtlOrientation) {
         ancestorsJList.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT)
     } else {
         ancestorsJList.setComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT)
     }
 
-    breadcrumbPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 8, 5))
-//    breadcrumbPanel.setLayout(new FlowLayout(rtlOrientation ? FlowLayout.RIGHT : FlowLayout.LEFT, 8, 5)) // RTL Support
-
     breadcrumbPanel.add(ancestorsJList)
 
-//    breadcrumbPanel.revalidate()
-//    breadcrumbPanel.repaint()
+    // breadcrumbPanel.revalidate()
+    // breadcrumbPanel.repaint()
 }
-
 
 def populateTagsListModel(JList<String> tagsJList) {
 
