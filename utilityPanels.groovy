@@ -2695,6 +2695,56 @@ JPanel createSiblingPreviewPanel(NodeModel nodeNotProxy, boolean positionAtBotto
 
 
 
+void hideInspectorPanelIfNeeded() {
+    if (shouldFreeze()) return
+    if (mouseOverList) return
+
+    visiblePreviewInspectors.each {
+        it.setVisible(false)
+        parentPanel.remove(it)
+    }
+
+    visiblePreviewInspectors.clear()
+
+    visibleInspectors.each{
+        if(!inspectorUpdateSelection) {
+            it.setVisible(false)
+        }
+        else{
+            if(it != visibleInspectors[0] && it != visibleInspectors[1]) {
+                it.setVisible(false)
+            }
+        }
+    }
+
+    if(!inspectorUpdateSelection) {
+        visibleInspectors.clear()
+    }
+    else {
+        visibleInspectors.removeAll { it != visibleInspectors[0] && it != visibleInspectors[1]}
+        if(visibleInspectors.size() != 0) {
+            setInspectorLocation(visibleInspectors[0], masterPanel)
+            if(visibleInspectors.size() > 1) {
+                setInspectorLocation(visibleInspectors[1], visibleInspectors[0])
+            }
+        }
+    }
+//
+//        if(inspectorUpdateSelection && visibleInspectors.size() > 0) {
+//            visibleInspectors[0].setVisible(true)
+//            if(visibleInspectors.size() > 1) {
+//                visibleInspectors[1].setVisible(true)
+//            }
+//        }
+
+    retractMasterPanel()
+
+
+
+
+    return
+
+}
 
 void configureLabelForNode(JComponent component, NodeModel nodeNotProxy, JPanel sourcePanel, int indexOfNode = 0) {
     Color backgroundColor = NodeStyleController.getController().getBackgroundColor(nodeNotProxy, StyleOption.FOR_UNSELECTED_NODE)
@@ -4198,7 +4248,32 @@ def clearQuickSearch() {
     Controller.getCurrentController().getMapViewManager().getMapViewComponent().repaint()
 }
 
-
+def togglePanelsVisibility() {
+    boolean visible = masterPanel.isVisible()
+    if (visible) {
+//        inspectorUpdateSelection = false
+        masterPanel.setVisible(false)
+        breadcrumbPanel.setVisible(false)
+        visibleInspectors.each { it.setVisible(false) }
+//        visibleInspectors.clear()
+        visiblePreviewInspectors.each { it.setVisible(false) }
+//        visiblePreviewInspectors.clear()
+        clearQuickSearch()
+        showPanels = false
+        cleanPreviousScriptExecution()
+    } else {
+//        inspectorUpdateSelection = true
+        startListeners()
+        loadHistoryWithFPHistory()
+        currentlySelectedNode = ScriptUtils.node().delegate
+        showPanels = true
+        masterPanel.setVisible(true)
+        breadcrumbPanel.setVisible(true)
+        visibleInspectors.each { it.setVisible(true) }
+    }
+    parentPanel.revalidate()
+    parentPanel.repaint()
+}
 
 def shouldShowInspectors() {
 //    return (showOnlyBreadcrumbs || (!showPanels && hideInspectorsEvenIfUpdateSelection))
