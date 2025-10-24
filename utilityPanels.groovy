@@ -872,6 +872,11 @@ public void manageInspectorsCreation() {
     } else if (currentSourcePanel == tagsPanel) {
         updateInspectorWithTagsPanel(index);
     }
+    
+    // دیباگ برای ردیابی
+    println "Inspector Creation - Source: ${currentSourcePanel?.getClass()?.simpleName}, " +
+            "In-place: ${activeSiblingPreviewPanels.contains(currentSourcePanel)}, " +
+            "Preview: ${visiblePreviewInspectors.contains(currentSourcePanel)}"
 }
 
 public boolean validateMousePositionOnList(int index) {
@@ -932,17 +937,30 @@ public void updateSubInspectorsLocation(JPanel subInspectorPanel) {
 }
 
 public void updatePreviewInspectors(NodeModel subNode) {
+    // ابتدا پنل‌های بازرس قبلی را پاک کنید
     visiblePreviewInspectors.each {
         it.setVisible(false)
         parentPanel.remove(it)
     }
     visiblePreviewInspectors.clear()
 
+    // ایجاد پنل بازرس اول
     previewInspector = createInspectorPanel(subNode, currentSourcePanel)
-    visiblePreviewInspectors.add(previewInspector)
-
-    previewInspector2 = createInspectorPanel(subNode, previewInspector)
-    visiblePreviewInspectors.add(previewInspector2)
+    if (previewInspector != null) {
+        visiblePreviewInspectors.add(previewInspector)
+        
+        // ایجاد پنل بازرس دوم (فرزندان)
+        previewInspector2 = createInspectorPanel(subNode, previewInspector)
+        if (previewInspector2 != null) {
+            visiblePreviewInspectors.add(previewInspector2)
+        }
+    }
+    
+    // اطمینان از نمایش پنل Update Selection
+    if (inspectorUpdateSelection && visibleInspectors.size() >= 2) {
+        visibleInspectors[0].setVisible(true)
+        visibleInspectors[1].setVisible(true)
+    }
 }
 
 public void updateInspectorWithTagsPanel(int index) {
@@ -1893,8 +1911,31 @@ JPanel createInspectorPanel(NodeModel nodeNotProxy, JPanel sourcePanel, boolean 
 
     inspectorPanel.putClientProperty("referenceNode", nodeNotProxy)
 
-    if (!shouldShowInspectors() && !activeSiblingPreviewPanels.contains(sourcePanel) && !visiblePreviewInspectors.contains(sourcePanel))  return inspectorPanel
+    // ★★★ تغییر اصلی: شرط ساده‌تر برای نمایش پنل‌ها ★★★
+    boolean shouldCreateInspector = true
+    
+    if (!showPanels && hideInspectorsEvenIfUpdateSelection) {
+        // فقط برای پنل‌های خاص اجازه نمایش بده
+        if (!activeSiblingPreviewPanels.contains(sourcePanel) && 
+            !visiblePreviewInspectors.contains(sourcePanel) &&
+            sourcePanel != masterPanel) {
+            shouldCreateInspector = false
+        }
+    }
+    
+    if (showOnlyBreadcrumbs) {
+        if (!activeSiblingPreviewPanels.contains(sourcePanel) && 
+            !visiblePreviewInspectors.contains(sourcePanel)) {
+            shouldCreateInspector = false
+        }
+    }
+    
+    if (!shouldCreateInspector) {
+        println "Inspector creation blocked for: ${sourcePanel?.getClass()?.simpleName}"
+        return inspectorPanel
+    }
 
+    // ★★★ اگر به اینجا رسیدیم، پنل را ایجاد کن ★★★
     inspectorPanel.setLayout(new BorderLayout())
 //    if (currentlySelectedNode == nodeNotProxy) {
 //        inspectorPanel.setBorder(BorderFactory.createLineBorder(Color.RED, 5))
@@ -2493,9 +2534,11 @@ JPanel createInspectorPanel(NodeModel nodeNotProxy, JPanel sourcePanel, boolean 
 //    parentPanel.repaint()
     parentPanel.addViewportReservedAreaSupplier(this::getInspectorReservedArea)
 
+    // دیباگ نهایی
+    println "Inspector created successfully for: ${nodeNotProxy.text.take(20)}..."
+    
     return inspectorPanel
 }
-
 
 JPanel createSiblingPreviewPanel(NodeModel nodeNotProxy, boolean positionAtBottom = false, int referenceNodeScreenX, int referenceNodeScreenY) {
 
@@ -2703,13 +2746,18 @@ void hideInspectorPanelIfNeeded() {
     if (shouldFreeze()) return
     if (mouseOverList) return
 
+    // پنل‌های پیش‌نمایش را مخفی نکن اگر مربوط به In-place Siblings Preview هستند
+    def previewToRemove = []
     visiblePreviewInspectors.each {
-        it.setVisible(false)
-        parentPanel.remove(it)
+        if (!activeSiblingPreviewPanels.contains(currentSourcePanel)) {
+            it.setVisible(false)
+            parentPanel.remove(it)
+            previewToRemove.add(it)
+        }
     }
+    visiblePreviewInspectors.removeAll(previewToRemove)
 
-    visiblePreviewInspectors.clear()
-
+    // پنل‌های بازرس اصلی را مدیریت کن
     visibleInspectors.each{
         if(!inspectorUpdateSelection) {
             it.setVisible(false)
@@ -2725,7 +2773,7 @@ void hideInspectorPanelIfNeeded() {
         visibleInspectors.clear()
     }
     else {
-        visibleInspectors.removeAll { it != visibleInspectors[0] && it != visibleInspectors[1]}
+        visibleInspectors.removeAll { it != visibleInspectors[0] && it != visibleInspectors[1] }
         if(visibleInspectors.size() != 0) {
             setInspectorLocation(visibleInspectors[0], masterPanel)
             if(visibleInspectors.size() > 1) {
@@ -2733,21 +2781,8 @@ void hideInspectorPanelIfNeeded() {
             }
         }
     }
-//
-//        if(inspectorUpdateSelection && visibleInspectors.size() > 0) {
-//            visibleInspectors[0].setVisible(true)
-//            if(visibleInspectors.size() > 1) {
-//                visibleInspectors[1].setVisible(true)
-//            }
-//        }
 
     retractMasterPanel()
-
-
-
-
-    return
-
 }
 
 void configureLabelForNode(JComponent component, NodeModel nodeNotProxy, JPanel sourcePanel, int indexOfNode = 0) {
@@ -4300,6 +4335,7 @@ def togglePanelsVisibility() {
     parentPanel.revalidate()
     parentPanel.repaint()
 }
+
 
 def shouldShowInspectors() {
 //    return (showOnlyBreadcrumbs || (!showPanels && hideInspectorsEvenIfUpdateSelection))
