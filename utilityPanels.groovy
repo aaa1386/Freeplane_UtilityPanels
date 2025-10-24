@@ -1158,8 +1158,12 @@ public void basicMasterPanelConfigs(JPanel masterPanel, JPanel breadcrumbPanel) 
     masterPanel.addMouseListener(sharedMouseListener)
     
     // تغییر این خط - پنل اصلی در سمت راست
-    int xPosition = rtlOrientation ? parentPanel.width - calculateRetractedWidthForMasterPanel() : 0
-    masterPanel.setBounds(xPosition, breadcrumbPanel.height, calculateRetractedWidthForMasterPanel(), (int) mapViewWindowForSizeReferences.height - 5)
+    int retractedWidth = calculateRetractedWidthForMasterPanel()
+    int xPosition = rtlOrientation ? parentPanel.width - retractedWidth : 0
+    
+    masterPanel.setBounds(xPosition, breadcrumbPanel.height, retractedWidth, (int) mapViewWindowForSizeReferences.height - 5)
+    
+    println "Master Panel Initial Position: x=${xPosition}, width=${retractedWidth}, RTL=${rtlOrientation}"
 }
 
 public JPanel createStylesPanel() {
@@ -3758,36 +3762,30 @@ def int calculateInspectorWidth(int ammountOfPannelsInInspector) {
 }
 
 def setInspectorLocation(JPanel inspectorPanel, JPanel sourcePanel) {
-    int x = rtlOrientation ? sourcePanel.getLocation().x - inspectorPanel.width : sourcePanel.getLocation().x + sourcePanel.width
+    int x, y
+    
+    if (rtlOrientation) {
+        // در حالت RTL: بازرس در سمت چپ پنل منبع قرار می‌گیرد
+        x = sourcePanel.getLocation().x - inspectorPanel.width
+        println "RTL Inspector Location: sourceX=${sourcePanel.getLocation().x}, inspectorWidth=${inspectorPanel.width}, finalX=${x}"
+    } else {
+        // در حالت LTR: بازرس در سمت راست پنل منبع قرار می‌گیرد
+        x = sourcePanel.getLocation().x + sourcePanel.width
+        println "LTR Inspector Location: sourceX=${sourcePanel.getLocation().x}, sourceWidth=${sourcePanel.width}, finalX=${x}"
+    }
 
-    int y = sourcePanel.getLocation().y
+    y = sourcePanel.getLocation().y
     if(panelsInMasterPanels.contains(sourcePanel)) {
         y = masterPanel.getLocation().y
     }
 
     if(activeSiblingPreviewPanels.contains(sourcePanel) || visiblePreviewInspectors.contains(sourcePanel)) {
-//        if(activeSiblingPreviewPanels.contains(sourcePanel) && !sourcePanel.getClientProperty("positionAtBottom")) {
-//            y = sourcePanel.getLocation().y
-//        }
-//        else if(activeSiblingPreviewPanels.contains(sourcePanel) && sourcePanel.getClientProperty("positionAtBottom")) {
         viewportHeight = parentPanel.height
-//            y = (viewportHeight - inspectorPanel.height) as int
-//        }
-
-
-
-//        y = sourcePanel.getLocation().y as int
         y = Math.min(sourcePanel.getLocation().y, (viewportHeight - inspectorPanel.height) as int)
-
-//        Point sourcePanelLocation = new Point(sourcePanel.getLocation().x as int, sourcePanel.getLocation().y as int)
-//        UITools.convertPointToAncestor(sourcePanel.parent, sourcePanelLocation, parentPanel)
-//        sourcepanelY = sourcePanelLocation.y
-
-//        y = (viewportHeight - (inspectorPanel.height - (viewportHeight - sourcepanelY))) as int
-
     }
 
     inspectorPanel.setLocation(x, y)
+    println "Final Inspector Position: x=${x}, y=${y}"
 }
 
 def containsTermInAncestors(NodeModel node, String term) {
@@ -3930,7 +3928,23 @@ public class RoundedCornerBorder implements Border {
 
 def expandMasterPanel() {
     bounds = masterPanel.getBounds()
-    bounds.width = calculateExpandedWidthForMasterPanel()
+    
+    if (rtlOrientation) {
+        // در حالت RTL: پنل به سمت چپ گسترش می‌یابد
+        int expandedWidth = calculateExpandedWidthForMasterPanel()
+        int widthDifference = expandedWidth - bounds.width
+        
+        // موقعیت X را به اندازه اختلاف عرض به چپ منتقل کن
+        bounds.x = bounds.x - widthDifference
+        bounds.width = expandedWidth
+        
+        println "RTL Expansion: x=${bounds.x}, width=${bounds.width}, difference=${widthDifference}"
+    } else {
+        // در حالت LTR: رفتار قبلی (گسترش به راست)
+        bounds.width = calculateExpandedWidthForMasterPanel()
+        println "LTR Expansion: x=${bounds.x}, width=${bounds.width}"
+    }
+    
     masterPanel.setBounds(bounds)
     panelsInMasterPanels.each {
         if(it != currentSourcePanel) {
@@ -3944,11 +3958,24 @@ def expandMasterPanel() {
     parentPanel.repaint()
     isMasterPanelExpanded = true
 }
-
 def retractMasterPanel() {
 //    if(!searchEditor.text.equals("") || quickSearchResults.size() > 0) return
     bounds = masterPanel.getBounds()
-    bounds.width = calculateRetractedWidthForMasterPanel()
+    int retractedWidth = calculateRetractedWidthForMasterPanel()
+    
+    if (rtlOrientation) {
+        // در حالت RTL: موقعیت پنل به حالت اول برگردد
+        int widthDifference = bounds.width - retractedWidth
+        bounds.x = bounds.x + widthDifference  // موقعیت X را به راست برگردان
+        bounds.width = retractedWidth
+        
+        println "RTL Retraction: x=${bounds.x}, width=${bounds.width}, difference=${widthDifference}"
+    } else {
+        // در حالت LTR: رفتار قبلی
+        bounds.width = retractedWidth
+        println "LTR Retraction: x=${bounds.x}, width=${bounds.width}"
+    }
+    
     masterPanel.setBounds(bounds)
     panelsInMasterPanels.each {
         it.setVisible(true)
@@ -3970,7 +3997,6 @@ def retractMasterPanel() {
         }
     }
 }
-
 
 
 def isCtrlPressed() {
